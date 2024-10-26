@@ -1,0 +1,3 @@
+mkclust <- function(A){
+  
+}

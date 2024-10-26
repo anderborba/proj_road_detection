@@ -1,0 +1,242 @@
+---
+title: Road Detection Project
+format:
+  ieee-pdf:
+    keep-tex: true
+  ieee-html: default
+author:
+  - id: Anderson A. De Borba
+    name: Anderson Adaime De Borba
+    affiliations:
+      - name: Mackenzie Presbyterian University (UPM)
+        department: Computing and Informatics Department - FCI  - Datalab 
+        city: São Paulo
+        country: Brazil
+        postal-code: 01302-907
+    orcid: https://orcid.org/0000-0001-8479-9128
+    email: anderson.borba@mackenzie.br
+    url: http://lattes.cnpq.br/5749588185802376
+    attributes:
+      corresponding: true
+#    photo: david-folio.png
+#    note: "Template created June 23, 2023; revised `r #format(Sys.Date(),format='%B %d, %Y')`."
+abstract: |
+  This document guides us through building a dataset image (train, test, and validation) using the Markov Random Field (MRF) with four classes, each with gamma noise inserted, and the road maps (Target maps) from the Massachusetts road dataset are utilized. The dataset comprises approximately one thousand road maps combined with the image result of the MRF method with gamma noise to generate around one thousand images.
+  With the ability to choose the class numbers, gamma distribution parameters, and road maps, we have a high degree of flexibility in the dataset creation process. This allows us to generate a significant number of images, thereby creating a versatile simulated dataset SAR with roads.
+keywords: Markov Random Field, Potts Method, Gamma Noise, SAR image Dataset.
+#funding:
+#  statement: "The `quarto-ieee` template is freely available under the MIT #license on github: <https://github.com/dfolio/quarto-ieee>."
+pageheader:
+  left: Journal XXX, Month Year
+  right: 'De Borba A.A.:  Road Detection Project'
+bibliography: bibliography.bib
+date: 2023-06-23
+pdf: https://github.com/dfolio/quarto-ieee/blob/main/template.pdf
+citation:
+  container-title: GitHUB
+  page: 1-3
+  type: software
+  issued: 2023-06-23
+  url: https://github.com/dfolio/quarto-ieee
+  pdf-url: https://github.com/dfolio/quarto-ieee/template.pdf
+---
+
+```{r library, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE, cache=TRUE)
+# R Libraries
+rm(list=ls())
+require(bayesImageS)
+require(tiff)
+require(reshape)
+# Libraries
+require(bayesImageS)
+require(tiff)
+require(ggplot2)
+require(reshape)
+# Libraries own
+source("../../../Code/Code_r/imagematrix.R")
+source("../../../Code/Code_r/GammaSAR.R")
+source("../../../Code/Code_r/build_potts_matrix_crop.R")
+source("../../../Code/Code_r/matrix_replicate.R")
+```
+
+# Road Detection in SAR Image
+## Simulated Dataset
+As researchers in SAR image fields, we are all too familiar with the challenges of obtaining SAR images for neural network applications. In recognition of these difficulties, we propose building a simulated data set. This practical solution will enable us to train, validate, and test the neural network, addressing a pressing issue in our field.
+
+The data set reference is  @MnihThesis; in the first phase, we used only the images called the Target maps by the author because these images have a map of the roads in Massachusetts, USA. The images have dimension $1500 \times 1500$.
+
+Our first idea was to make the dataset with images in the same dimension. We build the data set using the MRF theory based on @swend_wang_1987 and @kroese2013handbook. @fig-1a shows an image with dimension $1500 \times 1500$ generated with MRF idea. @fig-1b is the median filter applied in the image shown in @fig-1a.
+```{r Chunk 01, echo=FALSE}
+#| echo: false
+#| cache: true
+#| output: false
+start.time <- Sys.time()
+set.seed(123456789)
+nKerFilter <- 50
+dimg <- 1500
+niter <- 100
+#
+nImg <- dimg + 2 * nKerFilter
+mask <- matrix(1, nImg, nImg)
+neigh <- getNeighbors(mask, c(2,2,0,0))
+blocks <- getBlocks(mask, 2)
+#
+k <- 4
+beta <- log(1+sqrt(k))
+res.sw <- swNoData(beta, k, neigh, blocks, niter)
+mat <- matrix(max.col(res.sw$z)[1:nrow(neigh)], nrow=nrow(mask))
+Img <- imagematrix(equalize(mat))
+ImgFiltered <- MedianFilter(Img, nKerFilter)
+#
+imagematrixPNG(imagematrix(equalize(Img)), name = "../../../Images/PNG/fig1Mask_classes1_crop_unless.png")
+imagematrixPNG(imagematrix(equalize(ImgFiltered)), name ="../../../Images/PNG/fig1Mask_classes1_median_crop_unless.png")
+CropedImg <- matrix(0, dimg, dimg)
+CropedImgFiltered <- matrix(0, dimg, dimg)
+for (i in 1:dimg){
+  id <- i + nKerFilter
+  for (j in 1:dimg){
+    jd <- j + nKerFilter
+    CropedImg[i, j] <- Img[id, jd]
+    CropedImgFiltered[i, j] <- ImgFiltered[id, jd]
+  }
+}
+end.time <- Sys.time()
+time.taken <- end.time - start.time
+#cat("Run Time ",time.taken, " seconds, with matrix dimension (n x n) ", dimg)
+imagematrixPNG(imagematrix(equalize(CropedImg)), name = "../../../Images/PNG/fig1Mask_classes1.png")
+imagematrixPNG(imagematrix(equalize(CropedImgFiltered)), name ="../../../Images/PNG/fig1Mask_classes1_median.png")
+```
+:::{#fig-1  layout-ncol=2}
+![Figure 1](../../../Images/PNG/fig1Mask_classes1.png){#fig-1a}
+
+![Figure 2](../../../Images/PNG/fig1Mask_classes1_median.png){#fig-1b}
+:::
+
+## Building the Dataset
+The run time to get the images of the @fig-1a and @fig-1b  is very long. Then,  to overcome this problem, we change the processing to get the image with a dimension of $100\times 100$ using the MRF method with four classes. The MRF methods got the @fig-2a; after this, We applied the median filter in @fig-2a, resulting in the image shown in the @fig-2b.
+```{r}
+#| echo: false
+#| cache: true
+#| output: false
+start.time <- Sys.time()
+# Set parameters to build matrix cropped
+nKerFilter <- 21
+dimg <- 100
+niter <- 100
+k <- 4
+nKerPotts <- 2
+#
+MatList <- list()
+MatList <- build_potts_matrix_crop(nKerFilter, dimg, niter, k, nKerPotts)
+end.time <- Sys.time()
+time.taken <- end.time - start.time
+#cat("Run Time ",time.taken, "seconds, with matrix dimension (n x n) ", dimg)
+par(mfrow = c(1, 2))
+# MatList[[1]] is the Cropped Image
+# MatList[[2]] is the Cropped filtered Image
+#plot(imagematrix(equalize(MatList[[1]])))
+#plot(imagematrix(equalize(MatList[[2]])))
+#
+imagematrixPNG(imagematrix(equalize(MatList[[1]])), name = "../../../Images/PNG/fig1Mask_classes1_cropped.png")
+imagematrixPNG(imagematrix(equalize(MatList[[2]])), name ="../../../Images/PNG/fig1Mask_classes1_median_cropped.png")
+```
+:::{#fig-2  layout-ncol=2}
+![Figura 3](../../../Images/PNG/fig1Mask_classes1_cropped.png){#fig-2a}
+
+![Figura 4](../../../Images/PNG/fig1Mask_classes1_median_cropped.png){#fig-2b}
+:::
+
+After that, we replicate a pixel of the image to a neighborhood with a kernel defined ($\kappa \ times \kappa$); in this case, we use this parameter $\kappa = 15$ because we want to build an image with dimensions $1500\times 1500$. @fig-4 shows the result of this replicate process.
+```{r}
+#| echo: false
+#| cache: true
+#| output: false
+rep <- 15
+RepImg <- matrix_replicate(MatList[[2]], rep)
+#plot(imagematrix(equalize(RepImg)))
+imagematrixPNG(imagematrix(equalize(RepImg)), name = "../../../Images/PNG/fig1Mask_classes1_cropped_repl.png")
+```
+:::{#fig-3}
+![ ](../../../Images/PNG/fig1Mask_classes1_cropped_repl.png){width="30%"}
+:::
+
+Now, we use an arbitrary image of the Target maps of the Massachusetts Road Dataset. We superposed this image with the image shown in @fig-3; its procedure generates the image shown in @fig-4.
+```{r}
+#| echo: false
+#| cache: true
+#| output: false
+roads <- readTIFF("../../../Images/TIF/10528735_15.tif")
+Classes1pRoads <- pmax(RepImg, roads*(k+1))
+imagematrixPNG(imagematrix(equalize(Classes1pRoads)), name = "../../../Images/PNG/Classes1pRoads.png")
+#plot(imagematrix(equalize(Classes1pRoads)))
+```
+:::{#fig-4}
+![](../../../Images/PNG/Classes1pRoads.png){width="30%"}
+:::
+
+In this phase of the image simulated build, we insert gamma noise into each of the four image classes shown in the @fig-4.
+
+The parameters to the gamma function to insert the noise are  $L$ and $\frac{L}{\text{mean}}$, where $L=4$ and mean setting with 50, 100, 150, 200, and 500.
+```{r}
+#| echo: false
+#| cache: true
+#| output: false
+## Distributions and data for Classes1pRoads
+L <- 4
+# Increasingly brighter classes
+SARclass1 <- rgammaSAR(sum(Classes1pRoads==1), L, 50)
+SARclass2 <- rgammaSAR(sum(Classes1pRoads==2), L, 100)
+SARclass3 <- rgammaSAR(sum(Classes1pRoads==3), L, 150)
+SARclass4 <- rgammaSAR(sum(Classes1pRoads==4), L, 200)
+SARclass5 <- rgammaSAR(sum(Classes1pRoads==5), L, 500)
+```
+
+```{r}
+#| echo: false
+#| cache: true
+#| output: false
+# The observed SAR image
+
+SAR1 <- Classes1pRoads
+
+SAR1[Classes1pRoads==1] <- SARclass1
+SAR1[Classes1pRoads==2] <- SARclass2 
+SAR1[Classes1pRoads==3] <- SARclass3
+SAR1[Classes1pRoads==4] <- SARclass4
+#SAR1[Classes1pRoads==5] <- SARclass5
+#SAR1[Classes1pRoads==6] <- SARroads
+```
+
+```{r}
+#| echo: false
+#| cache: true
+#| output: false
+imagematrixPNG(imagematrix(equalize(SAR1)), name = "../../../Images/PNG/SAR1.png")
+```
+
+## Result
+We applied the approach reported in this text to building the @fig-5. We can describe the image with five classes: one road class without noise and four classes with different hypothetical noises characterizing forest, urban, ocean, lake, agricultural cultivation, etc.
+
+:::{#fig-5}
+![](../../../Images/PNG/SAR1.png){width="30%"}
+:::
+
+## Discussion
+With the methodology described in this report, which scheme is represented in @fig-6, we can choose a number of the classes in the MRF method and add gamma distribution to simulated noise in each class defined. We now have two control parameters, the class numbers and gamma distribution parameters (two per class). The third parameter can be considered an image among the road maps in the Massachusetts Road dataset, which has around one thousand road maps. 
+
+This way, we have three control parameters to build a simulated dataset to train, validate, and test a convolutional neural network (CNN) and apply it to the real SAR image for road detection.   
+
+Some questions.
+\begin{itemize}
+\item When do we use Gamma distribution or other distribution, for example, the G calligraphic distributions? Uniform or non-uniform regions? Mixed both?
+\item When do we estimate the region parameters or use parameters found in the literature? The first idea can have better accuracy in the detection phase.
+\end{itemize}
+
+:::{#fig-6}
+![ ](../../../Figures/PDF/OutlineSimulationRoads.pdf){width="51    %"}
+:::
+
+::: {.content-visible when-format="pdf"}
+# References {-}
+:::
