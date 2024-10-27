@@ -234,7 +234,7 @@ Some questions.
 \end{itemize}
 
 :::{#fig-6}
-![ ](../../../Figures/PDF/OutlineSimulationRoads.pdf){width="51    %"}
+![ ](../../../Figures/PDF/OutlineSimulationRoads.pdf){width="51%"}
 :::
 
 ::: {.content-visible when-format="pdf"}
