@@ -2,6 +2,11 @@
 title: Road Detection Project
 format:
   ieee-pdf:
+    include-in-header:
+      - text: |
+          \usepackage{amsfonts,amsmath}
+          \usepackage{algorithm2e}
+          \usepackage{bm,bbm}
     keep-tex: true
   ieee-html: default
 author:
@@ -21,8 +26,11 @@ author:
 #    photo: david-folio.png
 #    note: "Template created June 23, 2023; revised `r #format(Sys.Date(),format='%B %d, %Y')`."
 abstract: |
-  This document guides us through building a dataset image (train, test, and validation) using the Markov Random Field (MRF) with four classes, each with gamma noise inserted, and the road maps (Target maps) from the Massachusetts road dataset are utilized. The dataset comprises approximately one thousand road maps combined with the image result of the MRF method with gamma noise to generate around one thousand images.
-  With the ability to choose the class numbers, gamma distribution parameters, and road maps, we have a high degree of flexibility in the dataset creation process. This allows us to generate a significant number of images, thereby creating a versatile simulated dataset SAR with roads.
+  Deep learning techquines rely on large training data.
+  Augmentation procedures are often required because extensive and dependable marked datasets are often unavailable.
+  We describe how to build a dataset of images (train, test, and validation) for edge detection in Synthetic Aperture Radar (SAR) imagery using stochastic simulation and labeled aerial data.
+  Our proposal has three levels: (i)&nbsp;a Markov Random Field (MRF) produces maps of classes, on which we overimpose (ii)&nbsp;roads from the Massachusetts road dataset to obtain the ground truth, and (iii)&nbsp;we add speckle noise with credible parameters to build an observed image.
+  These steps can be repeated as many times as desired to obtain pairs of truth and observed data, with which effective training can be achieved.
 keywords: Markov Random Field, Potts Method, Gamma Noise, SAR image Dataset.
 #funding:
 #  statement: "The `quarto-ieee` template is freely available under the MIT #license on github: <https://github.com/dfolio/quarto-ieee>."
@@ -61,6 +69,28 @@ source("../../../Code/Code_r/matrix_replicate.R")
 ```
 
 # Road Detection in SAR Image
+
+## Simulation
+
+\begin{algorithm}[hbt]
+\SetAlgoLined
+\KwData{$N$: the number of pairs to generate}
+\KwData{$k$: the number of classes}
+\KwData{$\bm\theta = (\theta_1,\theta_2,\dots,\theta_{k+1})$: the models for each class and for the roads}
+\KwData{$r_1,r_2,\dots,r_{N_R}$: the roads dataset}
+\KwResult{$N$ pairs $(\text{truth},\text{observed SAR image})$}
+$\beta_c \leftarrow \log(1+\sqrt{k})$ the critical $\beta$\;
+\While{$n<N$}{
+Simulate $x''_n$ from the Potts model with $k$ classes and $\beta_c$\;
+Crop and upscale $x''_n$ to produce $x'_n$\;
+Select $r_n$ a roads image\;
+Compose $x'_n$ and $r'_n$ to produce a ground truth $x_n$\;
+Replace the $k+1$ classes in $x_n$ with observations from the models $\bm \theta$\;
+Store the pair $(x_n,z_n)$\;
+}
+\caption{Three-level simulation procedure}
+\end{algorithm}
+
 ## Simulated Dataset
 As researchers in SAR image fields, we are all too familiar with the challenges of obtaining SAR images for neural network applications. In recognition of these difficulties, we propose building a simulated data set. This practical solution will enable us to train, validate, and test the neural network, addressing a pressing issue in our field.
 
