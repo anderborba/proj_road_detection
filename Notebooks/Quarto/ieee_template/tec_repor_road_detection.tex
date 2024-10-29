@@ -152,7 +152,7 @@
 \newcommand{\CSLIndent}[1]{\hspace{\cslhangindent}#1}
 
 \usepackage{amsfonts,amsmath}
-\usepackage{algorithm2e}
+\usepackage[ruled,linesnumbered]{algorithm2e}
 \usepackage{bm,bbm}
 \usepackage{physics}
 \usepackage[version=3]{mhchem}
@@ -305,23 +305,50 @@ Markov Random Field, Potts Method, Gamma Noise, SAR image Dataset.
 
 \subsection{Simulation}\label{simulation}
 
+The procedure requires collecting one SAR image with roads, and
+identifying the number of classes, e.g., two classes. We then collect
+samples from the classes and from the roads, estimate the parameters
+that characterize them, and store them
+\(\bm\theta^{(2)}=(\theta_1,\theta_2,\theta_3)\): \(\theta_1\) and
+\(\theta_2\) index the model for the classes, and \(\theta_3\) collects
+the parameters of the roads return.
+
+Algorithm~\ref{Algo:SimulationOverview} is a high-level description of
+our simulation strategy. The user stipulates \(\mathcal K\), the set of
+classes. Typically, \(\mathcal K=\{2,3,4\}\). With this information, we
+compute the critical parameter of the Potts model \(\beta_c\). This
+parameter produces interesting outputs. Smaller values will produce
+outcomes with little spatial structure, i.e., almost noise, while
+samples obtained with parameters values above \(\beta_c\) will consist
+of a predominant class with small specks from the others. The user
+informs \(N_P\), the number of samples that will be drawn from the Potts
+model for each number of classes (line~\ref{Algo:NumberPottsSamples}).
+
 \begin{algorithm}[hbt]
 \SetAlgoLined
-\KwData{$N$: the number of pairs to generate}
-\KwData{$k$: the number of classes}
-\KwData{$\bm\theta = (\theta_1,\theta_2,\dots,\theta_{k+1})$: the models for each class and for the roads}
-\KwData{$r_1,r_2,\dots,r_{N_R}$: the roads dataset}
-\KwResult{$N$ pairs $(\text{truth},\text{observed SAR image})$}
+\KwData{$\mathcal K$, the set of classes}
+\KwData{$\bm\theta^{(k)} = (\theta_1,\theta_2,\dots,\theta_{k+1})$, the models for each class and for the roads for each $k$ in $\mathcal K$}
+\KwData{$N_P$, the number of Potts models replications per class}
+\KwData{$\mathcal R=\{r_1,r_2,\dots,r_{R}\}$, the set of roads}
+\KwData{$M$, the number of replications per ground truth}
+\BlankLine
+\KwResult{$\# \mathcal K \times N_P\times \# \mathcal R \times M$ pairs $(\text{truth},\text{observed SAR image})$}
+\BlankLine
+\ForEach{$k$ in $\mathcal K$}{
 $\beta_c \leftarrow \log(1+\sqrt{k})$ the critical $\beta$\;
-\While{$n<N$}{
-Simulate $x''_n$ from the Potts model with $k$ classes and $\beta_c$\;
-Crop and upscale $x''_n$ to produce $x'_n$\;
-Select $r_n$ a roads image\;
-Compose $x'_n$ and $r'_n$ to produce a ground truth $x_n$\;
-Replace the $k+1$ classes in $x_n$ with observations from the models $\bm \theta$\;
-Store the pair $(x_n,z_n)$\;
+  \For{$1\leq c_P\leq N_P$}{\label{Algo:NumberPottsSamples}
+  $x'' \leftarrow \text{ Potts}(k,\beta_c)$\;
+  $x' \leftarrow \text{(CROP,UPSCALE)}(x'')$\;
+    \ForEach{$r$ in $\mathcal R$}{
+    $x\leftarrow \text{COMPOSITION}(x', r)$\;
+      \For{$1\leq j\leq M$}{
+      $z \leftarrow \text{SPECKLE}(x, \bm\theta)$\;
+      $\text{STORE}(x,z)$\;
+      }
+    }
+  }
 }
-\caption{Three-level simulation procedure}
+\caption{Three-level simulation procedure}\label{Algo:SimulationOverview}
 \end{algorithm}
 
 \subsection{Simulated Dataset}\label{simulated-dataset}
