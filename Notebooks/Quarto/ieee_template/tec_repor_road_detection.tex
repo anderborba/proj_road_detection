@@ -313,6 +313,28 @@ that characterize them, and store them
 \(\theta_2\) index the model for the classes, and \(\theta_3\) collects
 the parameters of the roads return.
 
+Within the class of Markov Random Fields, the Potts model is an
+interesting description of spatial relationships among unordered
+classes. For our purposes, it is defined over finite a grid
+\(S=\{1,2,\dots,m\}\times\{1,2,\dots,n\}\). There is a random variable
+\(X_s\colon\Omega\rightarrow\{\xi_1,\xi_2,\dots,\xi_k\}\), with
+\(k\geq 2\), at each coordinate \(s\in S\). The distribution of \(X_s\)
+given all the other classes, \(\Pr(X_s\mid X_{S\setminus\{s\}})\) only
+depends on \(X_{\partial_{\{s\}}}\) a typically small set of
+observations close to \(s\), i.e.,
+\(\Pr(X_s\mid X_{S\setminus\{s\}})=\Pr(X_s\mid X_{\partial_{\{s\}}})\).
+The Potts model is defined by the set of probabilities \begin{equation}
+\Pr(X_s=\xi\mid X_{\partial_{\{s\}}}) = 
+\frac1Z \exp\big\{
+\beta \# \{t\in\partial_{\{s\}}:X_t=\xi\}
+\big\},
+\label{eq:Potts}
+\end{equation} where \(\beta\) is called ``attractivity,'\,' and \(Z\)
+is a normalizing constant. Sampling from~\eqref{eq:Potts} is not
+immediate. We used the Swendsen-Wang
+\citeproc{ref-swend_wang_1987}{{[}1{]}} algorithm because it is known
+for its fast convergence.
+
 Algorithm~\ref{Algo:SimulationOverview} is a high-level description of
 our simulation strategy. The user stipulates \(\mathcal K\), the set of
 classes. Typically, \(\mathcal K=\{2,3,4\}\). With this information, we
@@ -342,7 +364,7 @@ $\beta_c \leftarrow \log(1+\sqrt{k})$ the critical $\beta$\;
     \ForEach{$r$ in $\mathcal R$}{
     $x\leftarrow \text{COMPOSITION}(x', r)$\;
       \For{$1\leq j\leq M$}{
-      $z \leftarrow \text{SPECKLE}(x, \bm\theta)$\;
+      $z \leftarrow \text{SPECKLE}(x, \bm\theta^{(k)})$\;
       $\text{STORE}(x,z)$\;
       }
     }
@@ -359,14 +381,14 @@ recognition of these difficulties, we propose building a simulated data
 set. This practical solution will enable us to train, validate, and test
 the neural network, addressing a pressing issue in our field.
 
-The data set reference is \citeproc{ref-MnihThesis}{{[}1{]}}; in the
+The data set reference is \citeproc{ref-MnihThesis}{{[}2{]}}; in the
 first phase, we used only the images called the Target maps by the
 author because these images have a map of the roads in Massachusetts,
 USA. The images have dimension \(1500 \times 1500\).
 
 Our first idea was to make the dataset with images in the same
 dimension. We build the data set using the MRF theory based on
-\citeproc{ref-swend_wang_1987}{{[}2{]}} and
+\citeproc{ref-swend_wang_1987}{{[}1{]}} and
 \citeproc{ref-kroese2013handbook}{{[}3{]}}. Fig.~\ref{fig-1a} shows an
 image with dimension \(1500 \times 1500\) generated with MRF idea.
 Fig.~\ref{fig-1b} is the median filter applied in the image shown in
@@ -538,17 +560,17 @@ Some questions.
 
 \phantomsection\label{refs}
 \begin{CSLReferences}{0}{0}
-\bibitem[\citeproctext]{ref-MnihThesis}
-\CSLLeftMargin{{[}1{]} }%
-\CSLRightInline{V. Mnih, {``Machine learning for aerial image
-labeling,''} PhD thesis, University of Toronto, 2013. }
-
 \bibitem[\citeproctext]{ref-swend_wang_1987}
-\CSLLeftMargin{{[}2{]} }%
+\CSLLeftMargin{{[}1{]} }%
 \CSLRightInline{R. H. Swendsen and J.-S. Wang, {``Nonuniversal critical
 dynamics in {M}onte {C}arlo simulations,''} \emph{Phys. Rev. Lett.},
 vol. 58, pp. 86--88, Jan. 1987 {[}Online{]}. Available:
 \url{https://link.aps.org/doi/10.1103/PhysRevLett.58.86}}
+
+\bibitem[\citeproctext]{ref-MnihThesis}
+\CSLLeftMargin{{[}2{]} }%
+\CSLRightInline{V. Mnih, {``Machine learning for aerial image
+labeling,''} PhD thesis, University of Toronto, 2013. }
 
 \bibitem[\citeproctext]{ref-kroese2013handbook}
 \CSLLeftMargin{{[}3{]} }%
