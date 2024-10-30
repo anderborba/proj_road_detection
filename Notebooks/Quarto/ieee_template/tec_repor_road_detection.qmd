@@ -75,6 +75,22 @@ source("../../../Code/Code_r/matrix_replicate.R")
 The procedure requires collecting one SAR image with roads, and identifying the number of classes, e.g., two classes.
 We then collect samples from the classes and from the roads, estimate the parameters that characterize them, and store them $\bm\theta^{(2)}=(\theta_1,\theta_2,\theta_3)$: $\theta_1$ and $\theta_2$ index the model for the classes, and $\theta_3$ collects the parameters of the roads return.
 
+Within the class of Markov Random Fields, the Potts model is an interesting description of spatial relationships among unordered classes.
+For our purposes, it is defined over finite a grid $S=\{1,2,\dots,m\}\times\{1,2,\dots,n\}$.
+There is a random variable $X_s\colon\Omega\rightarrow\{\xi_1,\xi_2,\dots,\xi_k\}$, with $k\geq 2$, at each coordinate $s\in S$.
+The distribution of $X_s$ given all the other classes, $\Pr(X_s\mid X_{S\setminus\{s\}})$ only depends on $X_{\partial_{\{s\}}}$ a typically small set of observations close to $s$, i.e., $\Pr(X_s\mid X_{S\setminus\{s\}})=\Pr(X_s\mid X_{\partial_{\{s\}}})$.
+The Potts model is defined by the set of probabilities
+\begin{equation}
+\Pr(X_s=\xi\mid X_{\partial_{\{s\}}}) = 
+\frac1Z \exp\big\{
+\beta \# \{t\in\partial_{\{s\}}:X_t=\xi\}
+\big\},
+\label{eq:Potts}
+\end{equation}
+where $\beta$ is called ``attractivity,'' and $Z$ is a normalizing constant.
+Sampling from&nbsp;\eqref{eq:Potts} is not immediate.
+We used the Swendsen-Wang [@swend_wang_1987] algorithm because it is known for its fast convergence.
+
 Algorithm&nbsp;\ref{Algo:SimulationOverview} is a high-level description of our simulation
 strategy.
 The user stipulates $\mathcal K$, the set of classes.
@@ -102,7 +118,7 @@ $\beta_c \leftarrow \log(1+\sqrt{k})$ the critical $\beta$\;
     \ForEach{$r$ in $\mathcal R$}{
     $x\leftarrow \text{COMPOSITION}(x', r)$\;
       \For{$1\leq j\leq M$}{
-      $z \leftarrow \text{SPECKLE}(x, \bm\theta)$\;
+      $z \leftarrow \text{SPECKLE}(x, \bm\theta^{(k)})$\;
       $\text{STORE}(x,z)$\;
       }
     }
