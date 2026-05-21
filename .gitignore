@@ -1,0 +1,25 @@
+# R
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+**/.RData
+**/.Rhistory
+
+# Dados grandes
+Data/
+*.tif
+*.tiff
+*.pdf
+*.eps
+*.png
+
+# Cache Quarto/RMarkdown
+**/_cache/
+*_cache/
+*_files/
+Notebooks/Quarto/ieee_template/tec_repor_road_detection.tex
+
+# Python
+__pycache__/
+*.pyc

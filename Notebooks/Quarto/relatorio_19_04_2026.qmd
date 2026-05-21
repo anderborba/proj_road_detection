@@ -1,0 +1,338 @@
+---
+title: "Relatório do Projeto: Detecção de Estradas em Imagens SAR"
+subtitle: "Road Detection in SAR Images — Estado do Projeto"
+author:
+  - name: Anderson Adaime De Borba
+    affiliations:
+      - name: Universidade Presbiteriana Mackenzie (UPM)
+        department: Faculdade de Computação e Informática — Datalab
+        city: São Paulo
+        country: Brasil
+    email: anderson.borba@mackenzie.br
+    orcid: https://orcid.org/0000-0001-8479-9128
+date: 2026-04-19
+date-format: "DD [de] MMMM [de] YYYY"
+lang: pt
+bibliography: relatorio_refs.bib
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    theme: cosmo
+    code-fold: true
+  pdf:
+    toc: true
+    number-sections: true
+    documentclass: article
+    geometry: margin=2.5cm
+    include-in-header:
+      - text: |
+          \usepackage{amsfonts,amsmath}
+          \usepackage{bm}
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+# Visão Geral do Projeto
+
+Este relatório descreve o estado atual do projeto **Road Detection in SAR Images**, cujo objetivo é desenvolver uma metodologia para detecção automática de estradas em imagens de Radar de Abertura Sintética (SAR, do inglês *Synthetic Aperture Radar*).
+
+A motivação central é que redes neurais convolucionais profundas requerem grandes volumes de dados rotulados para treinamento, e imagens SAR reais com mapas de referência (ground truth) são escassas e de difícil obtenção. O projeto propõe uma solução baseada em **simulação estocástica** para gerar datasets sintéticos com pares *(imagem SAR observada, mapa de verdade)*.
+
+## Objetivo Principal
+
+Construir um pipeline de três etapas para síntese de imagens SAR com estradas, utilizando:
+
+1. **Campo Aleatório de Markov (MRF)** com modelo de Potts para gerar mapas de classes;
+2. **Dataset de Estradas de Massachusetts** como fonte de mapas de redes viárias reais;
+3. **Ruído Gamma e GI0** para simular o *speckle* característico de imagens SAR.
+
+O dataset resultante é utilizado para treinar, validar e testar redes neurais convolucionais — em particular a arquitetura **U-Net** — aplicadas à detecção de estradas em imagens SAR reais.
+
+---
+
+# Estrutura do Repositório
+
+O repositório `proj_road_detection` está organizado nos seguintes diretórios principais:
+
+| Diretório | Conteúdo |
+|-----------|----------|
+| `Code/Code_r/` | Scripts R para simulação MRF, modelo SAR, k-means e geração do dataset |
+| `Code/Code_py/` | Scripts Python para treinamento da U-Net |
+| `Code/Code_matlab/` | Scripts MATLAB para simulação do modelo de Potts e Ising |
+| `Data/road_optical/` | Dataset de Massachusetts (imagens ópticas + labels) |
+| `Data/dataset_8_class_sim/` | Dataset SAR simulado com 8 classes |
+| `Data/road_sim_visapp/` | Dataset gerado para o artigo VISAPP 2025 |
+| `Notebooks/Quarto/` | Relatórios e documentos técnicos em Quarto |
+| `Notebooks/Jupyter/` | Notebooks Jupyter |
+| `Figures/` | Figuras (PDF, Draw.io, PNG) |
+| `Images/` | Imagens geradas (PNG, TIF) |
+| `Text/` | Textos científicos |
+
+O repositório contém aproximadamente **9.916 arquivos** no total.
+
+---
+
+# Dataset de Entrada: Massachusetts Roads Dataset
+
+O dataset de referência é o **Massachusetts Roads Dataset** [@MnihThesis], composto por imagens aéreas ópticas de Massachusetts, EUA, com dimensão $1500 \times 1500$ pixels. Os dados estão organizados em:
+
+| Partição | Nº de Imagens |
+|----------|:-------------:|
+| Treino (`train`) | 1108 |
+| Teste (`test`) | 49 |
+| Validação (`val`) | 14 |
+
+Cada imagem possui um **mapa de labels** correspondente, com duas classes:
+
+| Classe | R | G | B |
+|--------|---|---|---|
+| background | 0 | 0 | 0 |
+| road | 255 | 255 | 255 |
+
+Os arquivos estão em formato TIFF e o metadado está em `Data/road_optical/metadata.csv`.
+
+---
+
+# Metodologia de Simulação
+
+## Modelo de Potts (MRF)
+
+Dentro da classe dos Campos Aleatórios de Markov, o **modelo de Potts** descreve relações espaciais entre classes não-ordenadas. Definido sobre uma grade finita $S = \{1,\dots,m\} \times \{1,\dots,n\}$, a distribuição condicional do modelo é:
+
+$$
+\Pr(X_s = \xi \mid X_{\partial_{\{s\}}}) = \frac{1}{Z} \exp\!\Bigl\{ \beta \cdot \#\{t \in \partial_{\{s\}} : X_t = \xi\} \Bigr\},
+$$
+
+onde $\beta$ é o parâmetro de **atratividade** e $Z$ é a constante de normalização. O parâmetro crítico, que produz imagens com estrutura espacial interessante, é:
+
+$$
+\beta_c = \log(1 + \sqrt{k}),
+$$
+
+com $k$ sendo o número de classes. A amostragem é realizada pelo algoritmo de **Swendsen-Wang** [@swend_wang_1987], reconhecido pela rápida convergência.
+
+## Procedimento de Simulação em Três Níveis
+
+O pipeline de geração do dataset sintético opera em três níveis hierárquicos:
+
+**Nível 1 — Mapa de Classes (MRF/Potts):**
+Uma imagem de $100 \times 100$ pixels é gerada com $k$ classes usando o amostrador de Swendsen-Wang. Um filtro de mediana é aplicado para suavizar as fronteiras entre classes.
+
+**Nível 2 — Superposição de Estradas:**
+A imagem de classes é replicada pixel a pixel com kernel $\kappa = 15$, obtendo uma imagem de $1500 \times 1500$. Em seguida, um mapa de estradas do dataset de Massachusetts é sobreposto, gerando o *ground truth* composto.
+
+**Nível 3 — Inserção de Ruído SAR:**
+Cada classe recebe ruído segundo a distribuição Gamma (ou GI0) com parâmetros específicos, simulando o *speckle* de imagens SAR reais.
+
+## Modelo de Ruído SAR
+
+### Distribuição Gamma (intensidade SAR)
+
+O modelo de intensidade SAR utiliza a distribuição Gamma parametrizada por número de looks $L$ e média $\mu$:
+
+$$
+f(x; L, \mu) = \frac{L^L}{\Gamma(L)\,\mu^L}\, x^{L-1} e^{-Lx/\mu}, \quad x > 0.
+$$
+
+As funções implementadas em `Code/Code_r/GammaSAR.R` são:
+
+- `dgammaSAR(x, L, mean)` — densidade;
+- `pgammaSAR(q, L, mean)` — função de distribuição acumulada;
+- `qgammaSAR(p, L, mean)` — quantis;
+- `rgammaSAR(n, L, mean)` — geração de amostras.
+
+### Distribuição GI0 (regiões heterogêneas)
+
+Para regiões urbanas e altamente heterogêneas, o modelo GI0 é utilizado:
+
+$$
+Z = X \cdot Y, \quad X \sim \text{Gamma Inversa}(-\alpha, \gamma^{-1}), \quad Y \sim \text{Gamma}(L, L^{-1}),
+$$
+
+implementado como `rGI0(n, a, g, L)` em `GammaSAR.R`.
+
+---
+
+# Dataset SAR Simulado com 8 Classes
+
+O script `Code/Code_r/set_dataset_8_classes_sim.R` implementa a geração do dataset com **8 classes** para cobertura de terreno mais rica. O pipeline:
+
+1. **K-means** sobre a imagem óptica RGB em tons de cinza, com $k=8$ centros;
+2. **Normalização** do mapa de labels das estradas;
+3. **Composição** via `max()` entre a máscara k-means e o mapa de estradas (classe 9);
+4. **Inserção de ruído** por classe:
+
+| Classe | Modelo | Parâmetros | Tipo de Terreno |
+|--------|--------|------------|-----------------|
+| 1 | GI0 | $\alpha=-15$, $\gamma=140$, $L=3$ | Heterogêneo |
+| 2 | GI0 | $\alpha=-15$, $\gamma=420$, $L=3$ | Heterogêneo |
+| 3 | GI0 | $\alpha=-5$, $\gamma=280$, $L=3$ | Semi-heterogêneo |
+| 4 | GI0 | $\alpha=-12$, $\gamma=2200$, $L=3$ | Urbano |
+| 5 | Gamma | $L=3$, $\mu=250$ | Região clara |
+| 6 | Gamma | $L=3$, $\mu=50$ | Região escura |
+| 7 | Gamma | $L=3$, $\mu=350$ | Região muito clara |
+| 8 | Gamma | $L=3$, $\mu=400$ | Região brilhante |
+| Estrada | Gamma | $L=3$, $\mu=10$ | Estrada (escura) |
+
+Os dados gerados estão em `Data/dataset_8_class_sim/`, organizados em:
+
+- `train_8_class_sim/` — 4 imagens de treinamento;
+- `test_8_class_sim/` — 2 imagens de teste.
+
+---
+
+# Dataset VISAPP 2025
+
+O script `Code/Code_r/teste_madeai_2025.R` gera um dataset específico para submissão ao artigo **VISAPP 2025**, salvo em `Data/road_sim_visapp/`. Os subdiretórios contêm:
+
+- `img/` e `img_label/` — imagens e labels processadas;
+- `img_madeia/` e `img_label_madeia/` — variante com prefixo *madeia*.
+
+---
+
+# Componentes de Código
+
+## Scripts R
+
+| Script | Função |
+|--------|--------|
+| `GammaSAR.R` | Distribuições Gamma e GI0 para SAR; filtro de mediana; estimador de máxima verossimilhança para $L$ |
+| `imagematrix.R` | Utilitários de exibição e exportação de imagens (PNG, TIFF) |
+| `SimulateMRF_frery.R` | Simulação completa de imagens SAR com duas realizações e visualização |
+| `SimulateMRF.R` | Simulação básica de MRF |
+| `build_potts_matrix_crop.R` | Geração e corte de matriz Potts com tamanho controlado |
+| `matrix_replicate.R` | Replicação pixel-a-pixel com kernel $\kappa$ |
+| `set_dataset_8_classes_sim.R` | Geração do dataset de 8 classes (treino/teste/val) |
+| `gen_bd_optical_to_sar.R` | Conversão de imagens ópticas para SAR simulado |
+| `teste_madeai_2025.R` | Geração do dataset para VISAPP 2025 |
+| `bd_visapp_2025.R` / `bd_visapp_2025_opt.R` | Variantes otimizadas para VISAPP |
+| `kmeans_teste_imag.R` | Testes de clusterização k-means em imagens |
+| `teste_kmeans*.R` | Scripts de teste de k-means (múltiplas variantes) |
+| `potts.R` / `clust.R` | Implementações auxiliares de Potts e clusterização |
+| `findNeighSNWE.R` | Busca de vizinhos (Norte, Sul, Leste, Oeste) |
+
+## Scripts Python
+
+| Script | Função |
+|--------|--------|
+| `main_unet.py` | Treinamento da U-Net com `segmentation_models_pytorch` e `albumentations` |
+| `polsar_basic_road_dect.py` | Detecção básica de estradas em imagens PolSAR |
+| `PottsGibbsSampler_main.py` | Amostrador de Gibbs para o modelo de Potts |
+| `read_show_sar.py` | Leitura e visualização de imagens SAR |
+| `sentinel_test/sentinel_down.py` | Download de imagens Sentinel |
+
+## Scripts MATLAB
+
+| Script | Função |
+|--------|--------|
+| `Potts.m` | Simulação do modelo de Potts |
+| `ising_2d_simulation.m` | Simulação do modelo de Ising 2D |
+| `clust.m` / `mkclust.m` | Clusterização |
+| `findneigh.m` | Busca de vizinhos |
+| `timestamp.m` | Utilitário de timestamp |
+
+---
+
+# Rede Neural: U-Net
+
+A arquitetura escolhida para a segmentação semântica é a **U-Net**, implementada em Python usando:
+
+- **PyTorch** como framework de deep learning;
+- **segmentation_models_pytorch (SMP)** para a arquitetura U-Net com encoders pré-treinados;
+- **albumentations** para augmentação de dados;
+- **OpenCV (cv2)** para pré-processamento de imagens.
+
+O script `Code/Code_py/main_unet.py` configura diretórios de treino (`train_sar`), validação (`val_sar`) e teste (`test_sar`) contendo imagens SAR simuladas, com os respectivos labels de estradas.
+
+---
+
+# Estado Atual do Repositório
+
+## Histórico de Commits (Resumo)
+
+| Hash | Data | Descrição |
+|------|------|-----------|
+| `19b5608` | Dez 2024 | Dataset 20-12-2024 |
+| `d929e29` | — | Configuração de `.gitignore` |
+| `372c080` | — | With Anderson |
+| `f523991` | — | The algorithm is ready to go |
+| `6447ab6` | — | Ignore the TeX file |
+| `fb41eeb` | — | Algorithm ready |
+| `038b368` | — | Making progress with the algorithm |
+| `ff1f317` | — | Making progress |
+| `9715e15` | Out 2025 | 26/10/2025 - 20:55 |
+
+## Arquivos Modificados (não commitados)
+
+Os seguintes arquivos apresentam modificações locais pendentes:
+
+**Modificados (`M`):**
+
+- `Code/Code_r/GammaSAR.R`
+- `Code/Code_r/SimulateMRF_frery.R`
+- `Code/Code_r/imagematrix.R`
+
+**Novos arquivos não rastreados (`??`):**
+
+| Arquivo | Descrição |
+|---------|-----------|
+| `convert_RBG_tiff_to_gray_tiff.R` | Conversão de imagens RGB para escala de cinza |
+| `gen_bd_optical_to_sar.R` | Geração de dataset óptico→SAR |
+| `kmeans_teste_imag.R` | Testes de k-means em imagens |
+| `set_dataset_8_classes_sim.R` | Dataset com 8 classes simuladas |
+| `teste_kmeans.R` | Teste básico de k-means |
+| `teste_kmeans_graph.R` | Visualização de k-means |
+| `teste_kmeans_masks_centers.R` | Máscaras e centros k-means |
+| `teste_kmeans_masks_centers_eight_classes.R` | K-means com 8 classes |
+| `teste_kmeans_matrix.R` | K-means matricial |
+| `teste_madeai_2025.R` | Dataset VISAPP 2025 |
+| `Data/SAR/` | Diretório com imagens SAR |
+| `Data/dataset_8_class_sim/` | Dataset 8 classes simulado |
+| `Data/road_optical/jpeg/` | Imagens JPEG do dataset óptico |
+| `Data/road_sim_visapp/img_label_madeia/` | Labels do dataset VISAPP |
+
+---
+
+# Resumo Estatístico do Repositório
+
+| Métrica | Valor |
+|---------|-------|
+| Total de arquivos | ~9.916 |
+| Imagens de treino (Massachusetts) | 1.108 |
+| Imagens de teste (Massachusetts) | 49 |
+| Imagens de validação (Massachusetts) | 14 |
+| Imagens simuladas (8 classes, treino) | 4 |
+| Imagens simuladas (8 classes, teste) | 2 |
+| Scripts R | ~25 |
+| Scripts Python | ~6 |
+| Scripts MATLAB | ~6 |
+
+---
+
+# Próximos Passos
+
+Com base no estado atual do projeto, os seguintes pontos merecem atenção:
+
+1. **Commit dos arquivos pendentes** — Os novos scripts R e os datasets gerados devem ser commitados para manter o histórico do projeto.
+
+2. **Expansão do dataset simulado** — O script `set_dataset_8_classes_sim.R` está limitado a 2 amostras por partição (`dim_img_test <- 2`); aumentar para o dataset completo é necessário para treinamento efetivo.
+
+3. **Treinamento da U-Net** — O script `main_unet.py` necessita dos dados SAR simulados organizados nos diretórios `train_sar`, `val_sar` e `test_sar`; verificar a integração com o dataset gerado.
+
+4. **Artigo VISAPP 2025** — Verificar se o dataset em `Data/road_sim_visapp/` está completo e os resultados experimentais finalizados.
+
+5. **Estimação de parâmetros reais** — Os parâmetros das distribuições (GI0 e Gamma) estão fixados empiricamente; estimação a partir de imagens SAR reais poderia melhorar o realismo do dataset.
+
+6. **Validação visual** — Comparar amostras do dataset simulado com imagens SAR reais (e.g., Sentinel-1) para validar a qualidade da simulação.
+
+---
+
+# Referências
+
+::: {#refs}
+:::
+

@@ -1,0 +1,9 @@
+e = ones(2);
+c = zeros(3,2);
+n = ones(1,2);
+l = zeros(1,2);
+m = ones(2,6);
+s = zeros(11,2);
+f = zeros(2,6);
+B = [s [f; [[e; c] [c; n; l] [e; c]]; m; f] s]
+[nclust,C] = mkclust(B);
